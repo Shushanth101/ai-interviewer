@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Transcription (VAD)</title>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js"></script></head>
+<body>
+
+<button id="toggle">Start Listening</button>
+<p class="status">Idle</p>
+<p class="transcription"></p>
+
+<script>
+    const transcription = document.querySelector(".transcription");
+    const statusEl = document.querySelector(".status");
+    const toggleBtn = document.getElementById("toggle");
+
+    let vadInstance = null;
+    let running = false;
+
+
+
+    function float32ToWavBlob(float32Audio) {
+    const sampleRate = 16000;
+
+    const buffer = new ArrayBuffer(44 + float32Audio.length * 2);
+    const view = new DataView(buffer);
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    let offset = 0;
+
+    writeString(view, offset, "RIFF");
+    offset += 4;
+
+    view.setUint32(offset, 36 + float32Audio.length * 2, true);
+    offset += 4;
+
+    writeString(view, offset, "WAVE");
+    offset += 4;
+
+    writeString(view, offset, "fmt ");
+    offset += 4;
+
+    view.setUint32(offset, 16, true);
+    offset += 4;
+
+    view.setUint16(offset, 1, true);
+    offset += 2;
+
+    view.setUint16(offset, 1, true);
+    offset += 2;
+
+    view.setUint32(offset, sampleRate, true);
+    offset += 4;
+
+    view.setUint32(offset, sampleRate * 2, true);
+    offset += 4;
+
+    view.setUint16(offset, 2, true);
+    offset += 2;
+
+    view.setUint16(offset, 16, true);
+    offset += 2;
+
+    writeString(view, offset, "data");
+    offset += 4;
+
+    view.setUint32(offset, float32Audio.length * 2, true);
+    offset += 4;
+
+    let index = 44;
+
+    for (let i = 0; i < float32Audio.length; i++) {
+        let sample = Math.max(-1, Math.min(1, float32Audio[i]));
+        view.setInt16(
+            index,
+            sample < 0 ? sample * 0x8000 : sample * 0x7FFF,
+            true
+        );
+        index += 2;
+    }
+
+    return new Blob([view], { type: "audio/wav" });
+}
+
+    async function sendAudio(float32Audio) {
+        try {
+            statusEl.textContent = "⏳ Processing...";
+            const wavBlob = float32ToWavBlob(float32Audio);
+
+            const reader = new FileReader();
+            reader.readAsDataURL(wavBlob);
+            reader.onloadend = async () => {
+                try {
+                    transcription.textContent = "Transcribing...";
+                    const base64Audio = reader.result.split(",")[1];
+
+                    const response = await fetch("http://localhost:3000/transcribe", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ base64Audio })
+                    });
+
+                    const data = await response.json();
+                    transcription.textContent = data.transcription;
+                } catch (err) {
+                    console.error(err);
+                    transcription.textContent = "Failed to fetch transcription";
+                }
+            };
+        } catch (err) {
+            console.error(err);
+            transcription.textContent = "Conversion failed";
+        }
+    }
+
+    toggleBtn.onclick = async () => {
+        if (!running) {
+            statusEl.textContent = "Initializing...";
+
+            vadInstance = await window.vad.MicVAD.new({
+                onSpeechStart: () => {
+                    statusEl.textContent = "🔴 Speaking...";
+                },
+                onSpeechEnd: (audio) => {
+                    sendAudio(audio);
+                },
+                  onnxWASMBasePath:
+        "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+      baseAssetPath:
+        "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/",
+                onVADMisfire: () => {
+                    statusEl.textContent = "🎙️ Listening...";
+                }
+            });
+
+            vadInstance.start();
+            running = true;
+            toggleBtn.textContent = "Stop Listening";
+            statusEl.textContent = "🎙️ Listening...";
+        } else {
+            vadInstance.destroy();
+            vadInstance = null;
+            running = false;
+            toggleBtn.textContent = "Start Listening";
+            statusEl.textContent = "Idle";
+        }
+    };
+</script>
+
+</body>
+</html>

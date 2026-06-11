@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aether - Premium Voice Assistant</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="State-of-the-art interactive hands-free conversational voice assistant powered by VAD, Groq Speech-to-Text, Llama 3, and Supertonic TTS.">
+  <meta name="theme-color" content="#09090e">
+  
+  <!-- Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- CDN dependencies for ONNX & VAD Web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js"></script>
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Audio Node for assistant playback (Invisible) -->
+  <audio id="aiPlayer" crossorigin="anonymous"></audio>
+
+  <div class="app-container">
+    
+    <!-- Sidebar Controls -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">A</div>
+        <h1 class="brand-title">Aether</h1>
+      </div>
+      
+      <!-- Session Card -->
+      <div class="panel-card">
+        <h2 class="panel-title">Session Details</h2>
+        <div class="session-info">
+          <div class="session-row">
+            <span>Status:</span>
+            <span id="badgeLabel" style="font-weight: 600; color: var(--text-active);">Initializing</span>
+          </div>
+          <div class="session-row">
+            <span>Chat ID:</span>
+            <span id="sessionVal" class="session-val">Offline</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Voice Configuration / Settings Card -->
+      <div class="panel-card">
+        <h2 class="panel-title">Voice Settings</h2>
+        <div class="control-group">
+          <label class="toggle-container">
+            <span>Auto-Listen (Hands-Free)</span>
+            <input type="checkbox" id="autolistenToggle" class="toggle-input" checked>
+            <div class="toggle-switch"></div>
+          </label>
+          <div class="session-row" style="opacity: 0.6; font-size: 0.75rem; line-height: 1.3;">
+            <span>When enabled, the assistant will automatically resume listening for your voice after completing its speech.</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Status & Network Logs -->
+      <div class="panel-card status-log">
+        <h2 class="panel-title">System Console</h2>
+        <div id="logList" class="log-list">
+          <div class="log-entry info">System loaded. Initializing local console...</div>
+        </div>
+      </div>
+    </aside>
+    
+    <!-- Main Interactive Stage -->
+    <main class="main-stage">
+      
+      <!-- Top Action & Navigation Bar -->
+      <header class="header-bar">
+        <div id="statusBadge" class="status-badge idle">
+          <div class="indicator-dot"></div>
+          <span id="statusText">Connecting to local server...</span>
+        </div>
+
+        <!-- Mode Tab Switcher -->
+        <div class="mode-tabs">
+          <button id="tabAssistant" class="tab-btn active">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            AI Assistant
+          </button>
+          <button id="tabInterviewer" class="tab-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            AI Interviewer
+          </button>
+        </div>
+        
+        <div class="action-buttons">
+          <button id="resetBtn" class="btn" title="Clear conversation history and reset ID">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M16 3h5v5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 21H3v-5"/></svg>
+            Reset Session
+          </button>
+          <button id="toggleBtn" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            Start Conversation
+          </button>
+        </div>
+      </header>
+      
+      <!-- Central Visualizer Canvas Area -->
+      <section class="workspace">
+        
+        <!-- AI Interviewer Inputs Panel -->
+        <div id="interviewInputsPanel" class="interview-inputs-panel hidden">
+          <div class="input-field-group">
+            <label for="jdInput">Job Description (JD)</label>
+            <textarea id="jdInput" placeholder="Paste the Job Description (requirements, skills, responsibilities) here..."></textarea>
+          </div>
+          <div class="input-field-group">
+            <label for="resumeInput">Candidate Resume</label>
+            <textarea id="resumeInput" placeholder="Paste the candidate's Resume (experience, projects, education) here..."></textarea>
+          </div>
+        </div>
+        <div id="visualizerContainer" class="visualizer-container idle" title="Click to toggle mic">
+          <div class="visualizer-aura"></div>
+          <div class="orb">
+            <canvas id="orbCanvas" class="orb-canvas"></canvas>
+            <div id="orbCore" class="orb-core">
+              <!-- Inline micro SVG loaded by script, fallback below -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Live Subtitles & Status Overlay -->
+        <div id="liveSubtitle" class="live-subtitle">
+          <span class="placeholder">Microphone is off</span>
+        </div>
+      </section>
+      
+      <!-- Chat Message Drawer Panel -->
+      <section class="chat-drawer">
+        <div class="chat-drawer-header">
+          <div class="chat-drawer-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Transcript History
+          </div>
+        </div>
+        <div id="chatHistory" class="chat-history">
+          <!-- Empty State -->
+          <div class="chat-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>History is empty. Turn on the microphone to begin transcription.</span>
+          </div>
+        </div>
+      </section>
+      
+    </main>
+  </div>
+
+  <!-- Core Javascript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
